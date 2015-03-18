@@ -16,17 +16,17 @@ vec_der_tanh = np.vectorize(der_tanh)
 
 def uniform_rand(r,shape):
     return 2 * r * np.random.random(shape) - r
-    
+
 class Network():
     ###
     ##  use SGD to train our network T times
     ##  for a 2 X 3 X 3 network,shape would be like [2,3,3]
-    ##  enta is the learning rate
+    ##  eta is the learning rate
     ##  r just the range we use the sample the initial weights
     ###
-    def __init__(self,T,shape,enta,r):
+    def __init__(self,T,shape,eta,r):
         self.T = T
-        self.enta = enta
+        self.eta = eta
         self.shape = np.array(shape)
         self.W = [uniform_rand(r,(shape[i]+1,shape[i+1])) for i in range(len(shape)-1)]
 	
@@ -34,11 +34,12 @@ class Network():
     ##  forward compute the score of the final layer
     ###
     def score(self,x,weights):
-	activation = x
-	for w in weights:
-	    activation = np.append(1,activation) # add the bias term
-	    activation = vec_tanh(activation.dot(w))
-	return activation
+	    activation = x
+	    for w in weights:
+	        activation = np.append(1,activation) # add the bias term
+	        activation = vec_tanh(activation.dot(w))
+	    return activation
+
 
     def cost(self,x,y,weights):
         return (y - self.score(x,weights)[0])**2
@@ -48,11 +49,12 @@ class Network():
     ##  for mult-ti class problem,use argmax(score) to predict instead
     ##  note: we use tanh on the last layer,so its score has been transformed
     ###
-    def predict(self,x,weights):
-	def sign(v):
+    def sign(self,v):
 	    if v > 0:return 1
 	    else:return -1
-        return sign(self.score(x,weights)[0])	
+
+    def predict(self,x,weights):
+	    return self.sign(self.score(x,weights)[0])
 
     ###
     ##  test function
@@ -79,7 +81,7 @@ class Network():
             deltas = self.backward(scores,x,y)
             grads = self.compute_gradient(activations,deltas)
             ## finally update all the weights
-            self.update_weights_v2(grads)
+            self.update_weights(grads)
 
     def cal_grad(self,x,y):
         activations,scores = self.forward_compute(x,y)
@@ -110,11 +112,10 @@ class Network():
             gradients[i] = deltas[i].dot(activations[i]).T
         return gradients
 
-    def update_weights_v2(self,gradients):
+    def update_weights(self,gradients):
         for i in range(len(self.W)):
-            self.W[i] = self.W[i] - self.enta * gradients[i]
+            self.W[i] = self.W[i] - self.eta * gradients[i]
 
-    ## personally this is trikiest part i think      
     def backward(self,scores,x,y):
         deltas = [None for size in self.shape[1:]]
         init_delta = self.get_last_layer_delta(scores[-1],y)
