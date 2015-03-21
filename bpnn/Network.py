@@ -104,7 +104,8 @@ class Network():
         return gradients
 
     def backward(self, scores, x, y):
-        deltas = [None for size in self.shape[1:]] # init all delta of each neuron including the bias neuron
+        # init all delta of each neuron including the bias neuron
+        deltas = [None for size in self.shape[1:]]
         init_delta = self.get_last_layer_delta(scores[-1], y)
         deltas[-1] = np.append(1, init_delta)  # add the bias neuron delta for convenience
 
