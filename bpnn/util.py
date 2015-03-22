@@ -18,9 +18,9 @@ def der_tanh(s):
     t = sigmoid(2 * s)
     return 4 * t * (1 - t)
 
-def rand_pick(X, Y):
+def rand_pick(X):
     index = int(np.random.random() * len(X))
-    return X[index], Y[index]
+    return X[index][:-1], X[index][-1]
 
 # vectorize our util function
 vec_tanh = np.vectorize(tanh)

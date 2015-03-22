@@ -1,7 +1,9 @@
 __author__ = 'carlxie'
 
+import time
 import numpy as np
 from util import *
+from multiprocessing import Process,Queue
 
 class Network():
     ###
@@ -10,10 +12,13 @@ class Network():
     ##  eta is the learning rate
     ##  r just the range we use the sample the initial weights
     ###
-    def __init__(self, T, shape, eta, r):
+    def __init__(self, T, shape, eta, r, mini_batch_size,lamb):
         self.T = T
         self.eta = eta
         self.shape = np.array(shape)
+        # lambda hyper parameter that use to control the trade-off between data loss and regularization loss
+        self.lamb = lamb
+        self.mini_batch_size = mini_batch_size
         self.W = [uniform_rand(r, (shape[i] + 1, shape[i + 1])) for i in range(len(shape) - 1)]
 
     ###
@@ -21,7 +26,7 @@ class Network():
     ##  used the tanh transformation
     ##  here we forward to compute the activation of the final layer
     ###
-    def activation(self, x, weights):
+    def feedforward(self, x, weights):
         activation = x  # our input as the first activation
         for w in weights:
             activation = np.append(1, activation)  # add the bias term
@@ -31,20 +36,21 @@ class Network():
 
     # we use the square error measure
     def cost(self, x, y, weights):
-        return (y - self.activation(x, weights)) ** 2
+        return (y - self.feedforward(x, weights)) ** 2
 
     ###
     ##  for binary classification problem use the sign of the score of the final layer
     ##  for mult-ti class problem,use argmax(score) to predict instead
     ##  note: we use tanh on the last layer,so its score has been transformed
+    ##        but it does not change the result because tanh is monotonically
     ###
     def predict(self, x, weights):
-        return sign(self.activation(x, weights))
+        return sign(self.feedforward(x, weights))
 
     ###
     ##  test function
     ###
-    def test(self, X, Y):
+    def evaluate(self, X, Y):
         return sum([self.predict(X[i], self.W) != Y[i]
                     for i in range(len(X))]) / float(len(X))
 
@@ -55,30 +61,61 @@ class Network():
     ##  2. update the weight w = w - eta * delta
     ##     (eta is the learning rate)
     ###
-    def SGD_train(self, X, Y):
-        for t in range(self.T):
-            x, y = rand_pick(X, Y)  # that is why it called stochastic
-
+    def SGD_train(self, training_data):
+         for t in range(self.T):
+            x, y = rand_pick(training_data)  # that is why it called stochastic
             ## all the dirty work get done here
             grads = self.calculate_analytic_grads(x,y)
             ## finally update all the weights
-            for i in range(len(self.W)):
-                self.W[i] = self.W[i] - self.eta * grads[i]
+            self.update_weights(grads)
+
+
+    def update_weights(self,grads):
+        for i in range(len(self.W)):
+            self.W[i] = self.W[i] - self.eta * grads[i]
+
+    ###
+    ##  no big change from SGD, just we partition X into small
+    ##  patches which size is determined by mini_batch_size
+    ##  and then use the average of those patches' gradients
+    ##  to update our weights
+    ###
+    def mini_batch_SGD(self,training_data):
+        for t in range(self.T):
+            # first we random shuffle our data
+            np.random.shuffle(training_data)
+            mini_batches = [training_data[k:k+self.mini_batch_size]
+                    for k in xrange(0, len(training_data), self.mini_batch_size)]
+
+            for mini_batch in mini_batches:
+                self.update_mini_batch(mini_batch)
+
+    def update_mini_batch(self,mini_batch):
+        grads = [np.zeros(w.shape) for w in self.W]
+        for data in mini_batch:
+            cal_grad = self.calculate_analytic_grads(data[:-1],data[-1])
+            for j in range(len(grads)):
+                grads[j] = grads[j] + cal_grad[j]
+
+        for j in range(len(grads)):
+            grads[j] = grads[j] / self.mini_batch_size
+
+        self.update_weights(grads)
 
     ## just for gradient check
     def calculate_analytic_grads(self, x, y):
-        activations, scores = self.forward_compute(x, y)
+        activations, scores = self.compute_activations_scores(x, y)
 
         ## backward pass, compute the delta of each neuron
         ## after the deltas are computed,use them to compute
         ## the gradient of each weight
-        deltas = self.backward(scores, x, y)
+        deltas = self.back_propagation(scores, x, y)
 
         ## grad = delta * a , remember?
         grads = self.compute_gradient(activations, deltas)
         return grads
 
-    def forward_compute(self, x, y):
+    def compute_activations_scores(self, x, y):
         ## first we forward pass to compute and cache the
         ## score of each layer, in the meanwhile we store
         ## all the activation of each neuron for later use
@@ -103,7 +140,7 @@ class Network():
             gradients[i] = deltas[i].dot(activations[i]).T
         return gradients
 
-    def backward(self, scores, x, y):
+    def back_propagation(self, scores, x, y):
         # init all delta of each neuron including the bias neuron
         deltas = [None for size in self.shape[1:]]
         init_delta = self.get_last_layer_delta(scores[-1], y)
@@ -122,26 +159,16 @@ class Network():
 
 
 if __name__ == "__main__":
-    train = np.loadtxt('hw4_nnet_train.dat')
-    nn = Network(30000, [2, 3, 1], 0.01, 0.1)
-    nn.SGD_train(train[:, :-1], train[:, -1])
-    rate = nn.test(train[:, :-1], train[:, -1])
+    train_data = np.loadtxt('hw4_nnet_train.dat')
+    nn = Network(5000, [2, 3, 1], 0.01, 0.1,10,0.5)
+    old = time.time()
+    nn.mini_batch_SGD(train_data)
+    test = np.loadtxt('hw4_nnet_test.dat')
+    e_out = nn.evaluate(test[:,:-1],test[:,-1])
+    print "e_out rate : "+str(e_out)
+    print time.time() - old
 
-    print "error_in %f " % rate
 
-# test = np.loadtxt('hw4_nnet_test.dat')
-
-#    e_out = []
-#    for enta in [0.001,0.01,0.1,1,10]:
-#        err = 0.0
-#        for t in range(80):
-#            print "start >>>>>>>>>>>>>>>>>>>>>>>>>>>"+str(t)
-#            nn = Network(30000,[2,3,1],enta,0.1)
-#            nn.SGD_train(train[:,:-1],train[:,-1])
-#            err = err + nn.test(test[:,:-1],test[:,-1])
-#        e_out.append(err/80)
-#    print "Q13"
-#    print e_out
 
 
 
