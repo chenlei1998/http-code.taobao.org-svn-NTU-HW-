@@ -1,9 +1,13 @@
 __author__ = 'carlxie'
 
 import time
-import numpy as np
 from util import *
-from multiprocessing import Process,Queue
+from multiprocessing import Pool
+
+def worker(obj):
+    nn = obj[0]
+    data = obj[1]
+    return nn.calculate_analytic_grads(data[:-1],data[-1])
 
 class Network():
     ###
@@ -36,7 +40,14 @@ class Network():
 
     # we use the square error measure
     def cost(self, x, y, weights):
-        return (y - self.feedforward(x, weights)) ** 2
+        return (y - self.feedforward(x, weights)) ** 2 + self.lamb * self.reg_cost() / self.mini_batch_size
+
+    def reg_cost(self):
+        W = np.array(self.W)**2
+        loss = 0.0
+        for w in W:
+            loss = loss + sum(sum(w))
+        return loss
 
     ###
     ##  for binary classification problem use the sign of the score of the final layer
@@ -62,17 +73,18 @@ class Network():
     ##     (eta is the learning rate)
     ###
     def SGD_train(self, training_data):
+         n = len(training_data)
          for t in range(self.T):
             x, y = rand_pick(training_data)  # that is why it called stochastic
             ## all the dirty work get done here
             grads = self.calculate_analytic_grads(x,y)
             ## finally update all the weights
-            self.update_weights(grads)
+            self.update_weights(grads,n)
 
 
-    def update_weights(self,grads):
+    def update_weights(self,grads,n):
         for i in range(len(self.W)):
-            self.W[i] = self.W[i] - self.eta * grads[i]
+            self.W[i] = self.W[i]*(1 - self.eta * self.lamb / n) - self.eta * grads[i]
 
     ###
     ##  no big change from SGD, just we partition X into small
@@ -81,6 +93,7 @@ class Network():
     ##  to update our weights
     ###
     def mini_batch_SGD(self,training_data):
+        n = len(training_data)
         for t in range(self.T):
             # first we random shuffle our data
             np.random.shuffle(training_data)
@@ -88,19 +101,43 @@ class Network():
                     for k in xrange(0, len(training_data), self.mini_batch_size)]
 
             for mini_batch in mini_batches:
-                self.update_mini_batch(mini_batch)
+                self.update_mini_batch(mini_batch,n)
 
-    def update_mini_batch(self,mini_batch):
-        grads = [np.zeros(w.shape) for w in self.W]
-        for data in mini_batch:
-            cal_grad = self.calculate_analytic_grads(data[:-1],data[-1])
-            for j in range(len(grads)):
-                grads[j] = grads[j] + cal_grad[j]
-
+    def update_mini_batch(self,mini_batch,n):
+        init_grads = [np.zeros(w.shape) for w in self.W]
+        cal_grads = [self.calculate_analytic_grads(data[:-1],data[-1]) for data in mini_batch]
+        grads = reduce(self.sum_grads,cal_grads,init_grads)
         for j in range(len(grads)):
             grads[j] = grads[j] / self.mini_batch_size
 
-        self.update_weights(grads)
+        self.update_weights(grads,n)
+
+    def sum_grads(self,g1,g2):
+        for j in range(len(self.W)):
+            g1[j] = g1[j] + g2[j]
+        return g1
+
+    def multi_process_train(self,training_data):
+        pool = Pool(3)
+        n = len(training_data)
+        for t in range(self.T):
+            # first we random shuffle our data
+            np.random.shuffle(training_data)
+            mini_batches = [training_data[k:k+self.mini_batch_size]
+                    for k in xrange(0, len(training_data), self.mini_batch_size)]
+
+            init_grads = [np.zeros(w.shape) for w in self.W]
+            for mini_batch in mini_batches:
+                batch = [(self,data) for data in mini_batch]
+                results = pool.map(worker,batch)
+                grads = reduce(self.sum_grads,results,init_grads)
+
+                for j in range(len(grads)):
+                    grads[j] = grads[j] / self.mini_batch_size
+
+                self.update_weights(grads,n)
+
+
 
     ## just for gradient check
     def calculate_analytic_grads(self, x, y):
@@ -160,9 +197,9 @@ class Network():
 
 if __name__ == "__main__":
     train_data = np.loadtxt('hw4_nnet_train.dat')
-    nn = Network(5000, [2, 3, 1], 0.01, 0.1,10,0.5)
+    nn = Network(10000, [2, 3, 1], 0.01, 0.1,10,0.25)
     old = time.time()
-    nn.mini_batch_SGD(train_data)
+    nn.multi_process_train(train_data)
     test = np.loadtxt('hw4_nnet_test.dat')
     e_out = nn.evaluate(test[:,:-1],test[:,-1])
     print "e_out rate : "+str(e_out)

@@ -48,6 +48,6 @@ def reconstruct(ls, shapes):
 if __name__ == "__main__":
     train = np.loadtxt('hw4_nnet_train.dat')
     x, y = train[:, :-1], train[:, -1]
-    net = Network(30000, [2, 3, 1], 0.01, 0.5)
+    net = Network(30000, [2, 3, 1], 0.01, 0.5,10,0.3)
     print compute_num_grad(net, x[0], y[0])
     print flat_list(net.calculate_analytic_grads(x[0], y[0]))
