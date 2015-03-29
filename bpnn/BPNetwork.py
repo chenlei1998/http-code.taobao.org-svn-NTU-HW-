@@ -1,7 +1,13 @@
 __author__ = 'carlxie'
 
 from util import *
+from multiprocessing import Pool
 import time
+
+def worker(obj):
+    nn = obj[0]
+    data = obj[1]
+    return nn.calculate_analytic_grads(data[:-1],data[-1])
 
 class BPNetwork():
     ###
@@ -94,8 +100,26 @@ class BPNetwork():
 
     ###
     ##  use multiprocess to accelerate gradient compute
-    ##
     ###
+    def multi_process_train(self,training_data,T,eta,lamb,mini_batch_size):
+        pool = Pool(4)
+        n = len(training_data)
+        for t in range(T):
+            print "epoch d% " + str(t)
+            np.random.shuffle(training_data)
+            mini_batches = [training_data[k:k+mini_batch_size]
+                    for k in xrange(0, len(training_data),mini_batch_size)]
+
+            for mini_batch in mini_batches:
+                batch = [(self,data) for data in mini_batch]
+                results = pool.map(worker,batch)
+                sum_w_grads = [np.zeros(w.shape) for w in self.weights]
+                sum_b_grads = [np.zeros(b.shape) for b in self.biases]
+                for w_grads,b_grads in results:
+                    sum_w_grads = self.sum_grads(sum_w_grads,w_grads)
+                    sum_b_grads = self.sum_grads(sum_b_grads,b_grads)
+                self.update_weights(sum_w_grads,sum_b_grads,eta,lamb,len(mini_batch),n)
+
 
     def calculate_analytic_grads(self, x, y):
         x.shape = (1,x.shape[0])
@@ -146,7 +170,7 @@ if __name__ == "__main__":
     train_data = np.load('train.dat.npy')
     nn = BPNetwork([784,30,10],0.5)
     old = time.time()
-    nn.mini_batch_SGD(train_data,30,0.01,0.5,20)
+    nn.multi_process_train(train_data,30,0.01,0.5,20)
     test = np.load('test.dat.npy')
     e_out = nn.evaluate(test[:,:-1],test[:,-1])
     print "e_out rate : "+str(e_out)
