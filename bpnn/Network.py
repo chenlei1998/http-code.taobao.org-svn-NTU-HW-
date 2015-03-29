@@ -4,6 +4,7 @@ import time
 from util import *
 from multiprocessing import Pool
 
+
 def worker(obj):
     nn = obj[0]
     data = obj[1]
@@ -40,7 +41,7 @@ class Network():
 
     # we use the square error measure
     def cost(self, x, y, weights):
-        return (y - self.feedforward(x, weights)) ** 2 + self.lamb * self.reg_cost() / self.mini_batch_size
+        return sum((vec_output(y) - self.predict(x, weights)) ** 2) + self.lamb * self.reg_cost() / self.mini_batch_size
 
     def reg_cost(self):
         W = np.array(self.W)**2
@@ -56,7 +57,7 @@ class Network():
     ##        but it does not change the result because tanh is monotonically
     ###
     def predict(self, x, weights):
-        return sign(self.feedforward(x, weights))
+        return np.argmax(self.feedforward(x, weights))
 
     ###
     ##  test function
@@ -72,9 +73,9 @@ class Network():
     ##  2. update the weight w = w - eta * delta
     ##     (eta is the learning rate)
     ###
-    def SGD_train(self, training_data):
+    def SGD_train(self, training_data,T):
          n = len(training_data)
-         for t in range(self.T):
+         for t in range(T):
             x, y = rand_pick(training_data)  # that is why it called stochastic
             ## all the dirty work get done here
             grads = self.calculate_analytic_grads(x,y)
@@ -109,7 +110,6 @@ class Network():
         grads = reduce(self.sum_grads,cal_grads,init_grads)
         for j in range(len(grads)):
             grads[j] = grads[j] / self.mini_batch_size
-
         self.update_weights(grads,n)
 
     def sum_grads(self,g1,g2):
@@ -121,6 +121,7 @@ class Network():
         pool = Pool(3)
         n = len(training_data)
         for t in range(self.T):
+            print "epoch d% " + str(t)
             # first we random shuffle our data
             np.random.shuffle(training_data)
             mini_batches = [training_data[k:k+self.mini_batch_size]
@@ -134,7 +135,6 @@ class Network():
 
                 for j in range(len(grads)):
                     grads[j] = grads[j] / self.mini_batch_size
-
                 self.update_weights(grads,n)
 
 
@@ -192,15 +192,15 @@ class Network():
         return map(lambda a: a[1:], deltas) # remove the bias neuron delta
 
     def get_last_layer_delta(self, score, y):
-        return -(y - vec_tanh(score)) * 2 * vec_der_tanh(score)
+        return -(vec_output(y) - vec_tanh(score)) * 2 * vec_der_tanh(score)
 
 
 if __name__ == "__main__":
-    train_data = np.loadtxt('hw4_nnet_train.dat')
-    nn = Network(10000, [2, 3, 1], 0.01, 0.1,10,0.25)
+    train_data = np.load("train.dat.npy")
+    nn = Network(1, [784, 30, 10], 0.1, 0.1,10,0.4)
     old = time.time()
     nn.multi_process_train(train_data)
-    test = np.loadtxt('hw4_nnet_test.dat')
+    test = np.load('test.dat.npy')
     e_out = nn.evaluate(test[:,:-1],test[:,-1])
     print "e_out rate : "+str(e_out)
     print time.time() - old
